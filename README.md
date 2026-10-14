@@ -1,8 +1,10 @@
-# llm-circuitry
+# llm-circuitry: safety and reliability building blocks for AI agents
 
-**The missing hardware of LLM systems.** Memory protection against prompt injection, transactions with rollback for agent actions, cache coherence between agents, interrupts and watchdogs, call stacks, ECC-style hallucination checks, DMA-style data handles, context paging, signed instructions and capability tokens, and deterministic replay.
+**Prompt injection defense, rollback for agent actions, shared state between multiple agents, loop detection, hallucination checks and least-privilege tool permissions, in one small Python/Rust library.**
 
-Rust core, Python API, no runtime dependencies, works with any model provider or agent framework.
+`llm-circuitry` gives LLM agents the low-level safeguards a normal computer gets from its hardware: memory protection (so untrusted text can't act as instructions), a transaction journal (so failed multi-step actions get undone), cache coherence (so agents don't act on stale data), interrupts and a watchdog (so agents can be stopped and don't loop forever), a call stack (so long tasks don't lose their goal), and ECC-style verification (so made-up quotes and numbers get caught).
+
+Rust core, Python API, no runtime dependencies. Works with any model provider (Anthropic, OpenAI, local models) and any agent framework (LangChain, LlamaIndex, CrewAI, AutoGen, MCP servers, or plain loops).
 
 ```bash
 pip install git+https://github.com/Peter-Zsoldos/llm-circuitry   # needs a Rust toolchain; prebuilt wheels: see Releases
@@ -227,6 +229,34 @@ def complete(**request):
 
 # in tests / debugging: ReplayCache("replay", ...) makes any unrecorded call an error
 ```
+
+---
+
+## FAQ
+
+### How do I protect an AI agent from prompt injection in Python?
+Put every input into a `ProtectedContext` with a trust level, and call `ctx.check(action, derived_from=[...])` before each tool call. Untrusted content (web pages, emails, files) is wrapped in data markers the attacker can't forge, and actions like `send_email` are denied or need approval if untrusted content influenced them. This works even when the injection isn't detected, because the decision is based on where the data came from, not on spotting the attack. See [Memory protection](#memory-protection-protectedcontext).
+
+### How do I roll back or undo actions when an AI agent fails halfway?
+Wrap the steps in `with Transaction(manager, "label") as tx:` and give each `tx.run(...)` an `undo` function. If any step raises, the completed steps are undone newest first. The journal is written before each step runs, so after a crash `TransactionManager(path).recover()` lists what to undo and which steps are in doubt. See [Transactions](#transactions-transactionmanager).
+
+### How do I stop an LLM agent from looping or repeating the same tool call?
+Call `Watchdog.tick(signature)` once per step. It trips on repeated actions, on repeating cycles (A, B, A, B…), when no progress has been reported for N steps, and on step, token or time budgets. See [Interrupts, watchdog, clock](#interrupts-watchdog-clock).
+
+### How do multiple agents share state without overwriting each other?
+Use `CoherentStore`. It versions every key and remembers which version each agent read. Writes based on an outdated read raise `StaleError`, other agents get invalidation messages, and `require_fresh(agent)` is a one-line guard to run before an agent acts. See [Cache coherence](#cache-coherence-coherentstore).
+
+### How do I detect hallucinated quotes and numbers in LLM output?
+Ask the model to cite as `[source_id: "exact quote"]`, then run `Verifier.check_cited(answer)`. Each quote is matched against the source (exactly, after normalisation, or fuzzily), and numbers in the claim that appear nowhere in the source are flagged. See [ECC](#ecc-verifier).
+
+### How do I give an AI agent least-privilege, expiring tool permissions?
+`Signer.grant(agent, actions, resources, ttl_seconds, on_behalf_of)` issues a signed capability token, and tools call `Signer.check(token, action, resource)` before acting. Wildcards are supported (`email.*`, `*@mycompany.com`). See [TPM and ACLs](#tpm-and-acls-signer-auditlog).
+
+### Does it work with LangChain, LlamaIndex, CrewAI, AutoGen or MCP?
+Yes. It has no framework dependency: each component is a plain object you call from your own loop, a tool wrapper, a callback or an MCP server handler.
+
+### Is it fast?
+The core is Rust and everything runs in memory. Measured on a laptop through the Python API: a policy check over 20 segments takes about 3.5 µs, a shared-state write about 2 µs, a watchdog tick under 1 µs, and an injection scan of 3 KB of text about 50 µs. That is negligible next to a model call.
 
 ---
 
