@@ -1,0 +1,31 @@
+[package]
+name = "llm-circuitry"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "The missing hardware of LLM systems: memory protection against prompt injection, transactions with rollback, multi-agent cache coherence, interrupts and watchdogs, call stacks, ECC-style claim verification, DMA handles, context paging, attestation and deterministic replay."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Peter-Zsoldos/llm-circuitry"
+readme = "README.md"
+keywords = ["llm", "agents", "prompt-injection", "multi-agent", "ai-safety"]
+categories = ["development-tools", "data-structures"]
+
+[lib]
+name = "llm_circuitry"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+python = ["dep:pyo3", "dep:pythonize"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+getrandom = "0.2"
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py39"], optional = true }
+pythonize = { version = "0.29", optional = true }
+
+[profile.release]
+lto = true
+codegen-units = 1
